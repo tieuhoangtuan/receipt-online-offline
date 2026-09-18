@@ -144,8 +144,6 @@ const esc  = s => String(s).replace(/[&<>"]/g, c =>
     await liff.init({ liffId: LIFF_ID });
     if (!liff.isLoggedIn()) { liff.login(); return; }
     S.profile = await liff.getProfile();
-    S.shop = localStorage.getItem('shop');
-    if (SHOPS.includes(S.shop)) S.step = 2;
     draw();
   } catch (err) {
     render(`<div class="msg bad">Không mở được form: ${esc(err.message)}</div>`);
