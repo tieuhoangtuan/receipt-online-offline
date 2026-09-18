@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Ghi giao dịch</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<style>
+:root{
+  --paper:#FCFCFA;
+  --ink:#14180F;
+  --muted:#6E7065;
+  --rule:#DBDCD2;
+  --field:#F2F2EC;
+  --money:#1F6F4A;
+  --alert:#B8741A;
+  --danger:#A32B1C;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:"Be Vietnam Pro",system-ui,-apple-system,sans-serif;
+  font-size:16px; line-height:1.45;
+  font-variant-numeric:tabular-nums;
+  -webkit-text-size-adjust:100%;
+}
+.wrap{
+  max-width:520px; margin:0 auto; min-height:100%;
+  display:flex; flex-direction:column;
+  padding:0 20px calc(20px + env(safe-area-inset-bottom));
+}
+
+/* tiến trình: nội dung đúng là một chuỗi 4 bước nên chia đoạn có nghĩa */
+.rail{display:flex; gap:4px; padding:14px 0 18px}
+.rail i{flex:1; height:3px; background:var(--rule); border-radius:2px}
+.rail i.on{background:var(--ink)}
+
+h1{font-size:23px; line-height:1.2; font-weight:700; margin:0 0 4px}
+.sub{color:var(--muted); font-size:14px; margin:0 0 22px}
+
+.stack{display:flex; flex-direction:column; gap:10px}
+.opt{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  background:var(--field); color:var(--ink);
+  border:1px solid transparent; border-radius:10px;
+  padding:16px 18px; font:inherit; font-weight:500;
+  min-height:58px;
+}
+.opt:active{background:#E8E8E0}
+.opt .note{display:block; color:var(--muted); font-size:13px; font-weight:400; margin-top:2px}
+.opt:focus-visible,.field input:focus-visible,.btn:focus-visible{outline:2px solid var(--ink); outline-offset:2px}
+
+.field{margin-bottom:18px}
+.field label{display:block; font-size:14px; color:var(--muted); margin-bottom:6px}
+.field input{
+  width:100%; font:inherit; font-size:17px; color:var(--ink);
+  background:var(--field); border:1px solid transparent; border-radius:10px;
+  padding:14px 16px;
+}
+.field input::placeholder{color:#A9AB9F}
+
+/* số tiền là thông tin chính, để nó lớn hẳn */
+.amount input{
+  font-size:34px; font-weight:700; text-align:right;
+  padding:12px 16px 14px; letter-spacing:-0.5px;
+}
+.amount label{font-size:15px; color:var(--ink); font-weight:500}
+
+.ledger{
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule);
+  padding:12px 0; margin:0 0 18px;
+}
+.ledger div{display:flex; justify-content:space-between; padding:3px 0; font-size:15px}
+.ledger .k{color:var(--muted)}
+.ledger .total{font-weight:700; border-top:1px dotted var(--rule); margin-top:6px; padding-top:9px}
+.diff{margin:-8px 0 16px; font-size:14px; font-weight:500}
+.diff.ok{color:var(--money)}
+.diff.off{color:var(--alert)}
+
+.recap{margin:0 0 24px; border-top:1px solid var(--rule)}
+.recap div{display:flex; justify-content:space-between; gap:16px;
+  padding:11px 0; border-bottom:1px solid var(--rule); font-size:15px}
+.recap .k{color:var(--muted); flex:none}
+.recap .v{text-align:right; font-weight:500; word-break:break-word}
+
+.actions{margin-top:auto; padding-top:24px; display:flex; flex-direction:column; gap:10px}
+.btn{
+  width:100%; font:inherit; font-weight:700; font-size:16px; cursor:pointer;
+  border:0; border-radius:10px; padding:17px; min-height:56px;
+}
+.btn.go{background:var(--money); color:#fff}
+.btn.go:disabled{background:#B6BDB6; color:#F2F2EC}
+.btn.back{background:none; color:var(--muted); font-weight:500; padding:10px}
+
+.msg{border-radius:10px; padding:14px 16px; font-size:15px; margin-bottom:16px}
+.msg.bad{background:#F7E8E5; color:var(--danger)}
+.center{text-align:center; margin:auto 0}
+.center .big{font-size:20px; font-weight:700; margin-bottom:6px}
+.hide{display:none}
+@media (prefers-reduced-motion:no-preference){
+  .btn,.opt{transition:background .12s ease}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="rail" id="rail"><i></i><i></i><i></i><i></i></div>
+  <div id="view"></div>
+</div>
+
+<script>
+// ---- cấu hình: thay 2 dòng này -------------------------------------------
+const LIFF_ID = 'YOUR_LIFF_ID';
+const GAS_URL = 'https://script.google.com/macros/s/YOUR_DEPLOY_ID/exec';
+const SHOPS   = ['Shop A', 'Shop B'];   // phải trùng tên tab trong Sheet
+// --------------------------------------------------------------------------
+
+const TYPES = [
+  { id:'online_0d', title:'Đơn online – 0đ',        note:'Khách đã thanh toán trên hệ thống' },
+  { id:'online_ck', title:'Đơn online – Chuyển khoản', note:'Khách chuyển khoản khi shipper giao' },
+  { id:'online_tm', title:'Đơn online – Tiền mặt',  note:'Shipper thu tiền mặt, có tiền thối' },
+  { id:'shop_ck',   title:'Chuyển khoản tại cửa hàng', note:'Khách chuyển khoản ngay tại shop' }
+];
+
+const S = { step:1, shop:null, type:null, profile:null,
+            soTien:'', tienThoi:'', shipperNop:'', thuNgan:'', ghiChu:'',
+            napActual:false, error:'' };
+
+const view = document.getElementById('view');
+const rail = document.getElementById('rail');
+const fmt  = n => (Number(n)||0).toLocaleString('vi-VN');
+const digits = s => String(s).replace(/\D/g,'');
+const esc  = s => String(s).replace(/[&<>"]/g, c =>
+  ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+// ---- khởi động ------------------------------------------------------------
+(async () => {
+  render('<p class="center">Đang mở…</p>');
+  try {
+    await liff.init({ liffId: LIFF_ID });
+    if (!liff.isLoggedIn()) { liff.login(); return; }
+    S.profile = await liff.getProfile();
+    S.shop = localStorage.getItem('shop');
+    if (SHOPS.includes(S.shop)) S.step = 2;
+    draw();
+  } catch (err) {
+    render(`<div class="msg bad">Không mở được form: ${esc(err.message)}</div>`);
+  }
+})();
+
+function render(html){ view.innerHTML = html; }
+function setRail(n){
+  [...rail.children].forEach((el,i)=> el.classList.toggle('on', i < n));
+}
+function go(step){ S.step = step; S.error = ''; draw(); }
+
+// ---- các bước -------------------------------------------------------------
+function draw(){
+  setRail(S.step);
+  ({1:stepShop, 2:stepType, 3:stepInput, 4:stepRecap, 5:stepDone})[S.step]();
+  view.querySelector('input')?.focus({preventScroll:true});
+}
+
+function stepShop(){
+  render(`
+    <h1>Shop nào?</h1>
+    <p class="sub">Lần sau form sẽ nhớ lựa chọn này.</p>
+    <div class="stack">
+      ${SHOPS.map(s=>`<button class="opt" data-shop="${esc(s)}">${esc(s)}</button>`).join('')}
+    </div>`);
+  view.querySelectorAll('[data-shop]').forEach(b => b.onclick = () => {
+    S.shop = b.dataset.shop;
+    localStorage.setItem('shop', S.shop);
+    go(2);
+  });
+}
+
+function stepType(){
+  render(`
+    <h1>Loại giao dịch</h1>
+    <p class="sub">${esc(S.shop)}</p>
+    <div class="stack">
+      ${TYPES.map(t=>`<button class="opt" data-type="${t.id}">${t.title}
+        <span class="note">${t.note}</span></button>`).join('')}
+    </div>
+    <div class="actions"><button class="btn back" id="back">Đổi shop</button></div>`);
+  view.querySelectorAll('[data-type]').forEach(b => b.onclick = () => {
+    S.type = b.dataset.type; go(3);
+  });
+  view.querySelector('#back').onclick = () => go(1);
+}
+
+function stepInput(){
+  if (S.type === 'online_0d') { go(4); return; }
+  S.type === 'online_tm' ? inputCash() : inputTransfer();
+}
+
+function inputTransfer(){
+  render(`
+    <h1>Số tiền khách chuyển</h1>
+    <p class="sub">${esc(title())}</p>
+    <div class="field amount">
+      <label for="a">Số tiền</label>
+      <input id="a" inputmode="numeric" placeholder="0" value="${fmtOrEmpty(S.soTien)}">
+    </div>
+    ${noteField()}
+    <div class="actions">
+      <button class="btn go" id="next" disabled>Tiếp tục</button>
+      <button class="btn back" id="back">Quay lại</button>
+    </div>`);
+
+  const a = view.querySelector('#a'), next = view.querySelector('#next');
+  const sync = () => {
+    a.value = a.value ? fmt(digits(a.value)) : '';
+    S.soTien = digits(a.value);
+    next.disabled = !(Number(S.soTien) > 0);
+  };
+  a.oninput = sync; sync();
+  bindNote();
+  next.onclick = () => go(4);
+  view.querySelector('#back').onclick = () => go(2);
+}
+
+function inputCash(){
+  render(`
+    <h1>Đơn tiền mặt</h1>
+    <p class="sub">${esc(S.shop)}</p>
+    <div class="field amount">
+      <label for="a">Số tiền đơn</label>
+      <input id="a" inputmode="numeric" placeholder="0" value="${fmtOrEmpty(S.soTien)}">
+    </div>
+    <div class="field">
+      <label for="f">Tiền thối dự phòng thu ngân đưa shipper</label>
+      <input id="f" inputmode="numeric" placeholder="0" value="${fmtOrEmpty(S.tienThoi)}">
+    </div>
+    <div class="ledger">
+      <div><span class="k">Tiền đơn</span><span id="l1">0</span></div>
+      <div><span class="k">Tiền thối dự phòng</span><span id="l2">0</span></div>
+      <div class="total"><span>Shipper phải nộp lại</span><span id="l3">0</span></div>
+    </div>
+    <div class="field">
+      <label for="n">Số tiền shipper nộp thực tế</label>
+      <input id="n" inputmode="numeric" placeholder="0" value="${fmtOrEmpty(S.shipperNop)}">
+    </div>
+    <p class="diff hide" id="diff"></p>
+    <div class="field">
+      <label for="c">Thu ngân nhận lại tiền</label>
+      <input id="c" list="cashiers" placeholder="Tên thu ngân" value="${esc(S.thuNgan)}">
+      <datalist id="cashiers">${cashierOptions()}</datalist>
+    </div>
+    ${noteField()}
+    <div class="actions">
+      <button class="btn go" id="next" disabled>Tiếp tục</button>
+      <button class="btn back" id="back">Quay lại</button>
+    </div>`);
+
+  const $ = s => view.querySelector(s);
+  const a = $('#a'), f = $('#f'), n = $('#n'), c = $('#c'),
+        next = $('#next'), diff = $('#diff');
+
+  const sync = () => {
+    [a,f,n].forEach(el => { el.value = el.value ? fmt(digits(el.value)) : ''; });
+    S.soTien = digits(a.value); S.tienThoi = digits(f.value);
+    S.thuNgan = c.value.trim();
+
+    const expect = (+S.soTien||0) + (+S.tienThoi||0);
+    $('#l1').textContent = fmt(S.soTien);
+    $('#l2').textContent = fmt(S.tienThoi);
+    $('#l3').textContent = fmt(expect);
+
+    // gợi ý sẵn con số đúng, nhân viên chỉ sửa khi thực tế lệch
+    if (!S.napActual && expect > 0) n.value = fmt(expect);
+    S.shipperNop = digits(n.value);
+
+    const d = (+S.shipperNop||0) - expect;
+    if (!S.shipperNop || !expect) {
+      diff.className = 'diff hide';
+    } else if (d === 0) {
+      diff.className = 'diff ok'; diff.textContent = 'Khớp';
+    } else {
+      diff.className = 'diff off';
+      diff.textContent = (d>0?'Thừa ':'Thiếu ') + fmt(Math.abs(d)) + 'đ, cần ghi chú lý do';
+    }
+    next.disabled = !(+S.soTien > 0 && S.thuNgan && S.shipperNop &&
+                      (d === 0 || S.ghiChu.trim()));
+  };
+
+  [a,f,c].forEach(el => el.oninput = sync);
+  n.oninput = () => { S.napActual = true; sync(); };
+  bindNote(sync); sync();
+  next.onclick = () => go(4);
+  $('#back').onclick = () => go(2);
+}
+
+function noteField(){
+  return `<div class="field">
+    <label for="g">Ghi chú</label>
+    <input id="g" placeholder="Không bắt buộc" value="${esc(S.ghiChu)}">
+  </div>`;
+}
+function bindNote(also){
+  const g = view.querySelector('#g');
+  if (g) g.oninput = () => { S.ghiChu = g.value; if (also) also(); };
+}
+
+function stepRecap(){
+  const rows = [['Shop', S.shop], ['Loại', title()]];
+  if (S.type === 'online_0d') rows.push(['Số tiền', '0đ']);
+  else rows.push(['Số tiền đơn', fmt(S.soTien)+'đ']);
+  if (S.type === 'online_tm'){
+    rows.push(['Tiền thối dự phòng', fmt(S.tienThoi)+'đ'],
+              ['Shipper nộp', fmt(S.shipperNop)+'đ'],
+              ['Thu ngân nhận', S.thuNgan]);
+  }
+  if (S.ghiChu.trim()) rows.push(['Ghi chú', S.ghiChu.trim()]);
+  rows.push(['Người nhập', S.profile.displayName]);
+
+  render(`
+    <h1>Kiểm tra lại</h1>
+    <p class="sub">Ảnh vừa gửi trong group sẽ được đính kèm tự động.</p>
+    ${S.error ? `<div class="msg bad">${esc(S.error)}</div>` : ''}
+    <div class="recap">
+      ${rows.map(([k,v])=>`<div><span class="k">${esc(k)}</span>
+        <span class="v">${esc(v)}</span></div>`).join('')}
+    </div>
+    <div class="actions">
+      <button class="btn go" id="send">Ghi vào sổ</button>
+      <button class="btn back" id="back">Sửa lại</button>
+    </div>`);
+
+  view.querySelector('#send').onclick = submit;
+  view.querySelector('#back').onclick = () => go(S.type === 'online_0d' ? 2 : 3);
+}
+
+function stepDone(n){
+  render(`<div class="center">
+    <p class="big">Đã ghi vào ${esc(S.shop)}</p>
+    <p class="sub">Đính kèm ${n} ảnh. Cửa sổ sẽ tự đóng.</p>
+  </div>`);
+  setTimeout(() => { try { liff.closeWindow(); } catch(e){} }, 1400);
+}
+
+// ---- gửi ------------------------------------------------------------------
+async function submit(){
+  const btn = view.querySelector('#send');
+  btn.disabled = true; btn.textContent = 'Đang ghi…';
+
+  try {
+    // text/plain để tránh CORS preflight, Apps Script vẫn đọc được JSON
+    const res = await fetch(GAS_URL, {
+      method:'POST', redirect:'follow',
+      headers:{'Content-Type':'text/plain;charset=utf-8'},
+      body: JSON.stringify({
+        action:'submit', shop:S.shop, orderType:S.type,
+        soTien:S.soTien, tienThoi:S.tienThoi, shipperNop:S.shipperNop,
+        thuNgan:S.thuNgan, ghiChu:S.ghiChu,
+        userId:S.profile.userId, displayName:S.profile.displayName
+      })
+    });
+    const out = await res.json();
+
+    if (out.ok){
+      rememberCashier(S.thuNgan);
+      setRail(5); stepDone(out.images);
+    } else {
+      S.error = out.error || 'Không ghi được.';
+      btn.disabled = false; draw();
+    }
+  } catch (err) {
+    S.error = 'Mất kết nối, thử lại: ' + err.message;
+    btn.disabled = false; draw();
+  }
+}
+
+// ---- phụ trợ --------------------------------------------------------------
+function title(){ return (TYPES.find(t=>t.id===S.type)||{}).title || ''; }
+function fmtOrEmpty(v){ return v ? fmt(v) : ''; }
+
+function cashierOptions(){
+  return JSON.parse(localStorage.getItem('cashiers') || '[]')
+    .map(n => `<option value="${esc(n)}">`).join('');
+}
+function rememberCashier(name){
+  if (!name) return;
+  const list = JSON.parse(localStorage.getItem('cashiers') || '[]');
+  if (!list.includes(name)) {
+    list.unshift(name);
+    localStorage.setItem('cashiers', JSON.stringify(list.slice(0, 20)));
+  }
+}
+</script>
+</body>
+</html>
